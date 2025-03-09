@@ -61,51 +61,51 @@ def filter_group(images_tensor, threshold, group_indices):
 
     # 输出组内MSE范围
     mse_min, mse_max = mse_matrix.min().item(), mse_matrix.max().item()
-    print(f"组内MSE范围: {mse_min:.2f} - {mse_max:.2f}")
+    #print(f"组内MSE范围: {mse_min:.6f} - {mse_max:.6f}")
 
     return kept_indices, removed_indices
 
 
 # 主函数：分组使用GPU筛选并删除重复图片
-def filter_similar_images(input_dir="unparsed", threshold=20, resize_size=(64, 64), group_size=5):
+def filter_similar_images(input_dir="unparsed", threshold=0.005, resize_size=(64, 64), group_size=5):
     """
-    分组使用MSE筛选相似图片并删除重复的（GPU加速，精准去重）
+    分组使用MSE筛选相似图片并删除重复的（GPU加速，更严格去重）
     :param input_dir: 输入文件夹
-    :param threshold: MSE阈值，降低到20以提高精度
+    :param threshold: MSE阈值（归一化后），默认0.005，更严格的筛选
     :param resize_size: 调整图片尺寸
     :param group_size: 每组图片数量
     """
     start_time = time.time()
 
     # 获取所有图片文件
-    image_files = [f for f in os.listdir(input_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
+    image_files = [f for f in os.listdir(input_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
     if not image_files:
         print("未找到图片文件！")
         return
 
-    # 加载并预处理图片
-    print("加载并预处理图片...")
+    # 加载并预处理图片，将像素归一化到 [0, 1]
+    #print("加载并预处理图片...")
     images = []
     for img_file in image_files:
         img_path = os.path.join(input_dir, img_file)
         try:
             img = Image.open(img_path).convert('RGB')
             img = img.resize(resize_size, Image.LANCZOS)  # 高质量插值
-            img_array = np.array(img, dtype=np.float32)  # [H, W, C]
+            img_array = np.array(img, dtype=np.float32) / 255.0  # 归一化到 [0, 1]
             img_array = np.transpose(img_array, (2, 0, 1))  # [C, H, W]
             images.append(img_array)
         except Exception as e:
             print(f"加载 {img_file} 失败: {e}")
 
     if len(images) < 2:
-        print("图片数量不足，无法比较！")
+        #print("图片数量不足，无法比较！")
         return
 
     # 动态分组：少于10张全局比较
     num_images = len(images)
     if num_images <= 10:
         group_size = num_images
-        print("图片数量较少，进行全局比较...")
+        #print("图片数量较少，进行全局比较...")
     else:
         print(f"使用GPU分组筛选（每组 {group_size} 张）...")
 
@@ -128,27 +128,29 @@ def filter_similar_images(input_dir="unparsed", threshold=20, resize_size=(64, 6
         all_removed_indices.extend(removed_indices)
 
     # 删除重复的图片
-    print("删除重复的图片...")
+    #print("删除重复的图片...")
     for idx in sorted(all_removed_indices, reverse=True):
         file_to_remove = image_files[idx]
         file_path = os.path.join(input_dir, file_to_remove)
         try:
             os.remove(file_path)
-            print(f"已删除重复图片: {file_path}")
+            #print(f"已删除重复图片: {file_path}")
         except Exception as e:
             print(f"删除 {file_path} 失败: {e}")
 
     # 统计信息
-    print(f"总图片数: {len(image_files)}")
-    print(f"保留图片数: {len(all_kept_indices)}")
+    #print(f"总图片数: {len(image_files)}")
+    #print(f"保留图片数: {len(all_kept_indices)}")
     print(f"删除图片数: {len(all_removed_indices)}")
     print(f"耗时: {time.time() - start_time:.2f} 秒")
 
 
 if __name__ == "__main__":
-    filter_similar_images(
-        input_dir="unparsed",
-        threshold=20,  # 更严格的阈值
-        resize_size=(64, 64),
-        group_size=5
-    )
+    
+    for i in range(0, 2):
+        filter_similar_images(
+            input_dir="unparsed",
+            threshold=0.005,  # 更严格的阈值（归一化后）
+            resize_size=(64, 64),
+            group_size=5
+        )
